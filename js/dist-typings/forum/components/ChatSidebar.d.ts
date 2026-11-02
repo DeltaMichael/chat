@@ -13,6 +13,12 @@ interface SectionAction {
     title: string;
     action: () => void;
 }
+/** O que a seção mostra quando não tem nenhum canal. */
+interface SectionEmpty {
+    text: string;
+    cta: string;
+    action: () => void;
+}
 /** Navegação: Minhas threads, Busca, depois Canais e Mensagens diretas. */
 export default class ChatSidebar extends Component<ChatSidebarAttrs> {
     /** Timer de intenção de hover pendente (ver handlers da linha do canal). */
@@ -29,7 +35,7 @@ export default class ChatSidebar extends Component<ChatSidebarAttrs> {
     /** Um dos atalhos acima da lista de canais, com estado ativo. */
     protected quickLink(routeName: string, icon: string, key: string, badge?: number): Mithril.Children;
     /** Grupo de canais com título e ações (explorar, criar). */
-    protected section(labelKey: string, channels: Channel[], actions: SectionAction[]): Mithril.Children;
+    protected section(labelKey: string, channels: Channel[], actions: SectionAction[], empty?: SectionEmpty): Mithril.Children;
     protected row(channel: Channel): Mithril.Children;
     /**
      * Pré-carrega o canal quando o ponteiro para na linha. Substitui o timer
@@ -37,6 +43,8 @@ export default class ChatSidebar extends Component<ChatSidebarAttrs> {
      */
     protected schedulePrefetch(channel: Channel): void;
     protected cancelPrefetch(): void;
+    /** Escolhe com quem conversar; o modal abre a conversa. */
+    protected startDirect(): void;
     protected createChannel(): void;
 }
 export {};

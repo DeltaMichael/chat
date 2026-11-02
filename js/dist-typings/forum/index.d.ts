@@ -19,8 +19,7 @@ import { realtimeBound, realtimeDelivered, realtimeLive } from './realtime';
 export { default as extend } from './extend';
 export { Channel, Message, Thread, Upload, MessageFlag, ChatState, chatState, ChatNavButton, ChatDrawer, ChannelInviteNotification, ChannelInviteDeclinedNotification, MessageFlaggedNotification, ModeratorPromotedNotification, OwnershipTransferNotification, OwnershipTransferDeclinedNotification, OwnershipInheritedNotification, realtimeBound, realtimeDelivered, realtimeLive, };
 /**
- * Abre (ou cria) um canal direto com o usuário e o mostra. O endpoint só reusa a
- * conversa enquanto todos os participantes estão nela; depois que alguém sai, um
- * novo início abre outro canal.
+ * Abre (ou cria) a conversa direta com o usuário. Fica exportada para outras
+ * extensões; o trabalho está em `utils/startDirect`.
  */
 export declare function startDirectMessage(user: User): Promise<void>;
