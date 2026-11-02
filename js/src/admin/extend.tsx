@@ -45,6 +45,22 @@ export default [
       label: trans('settings.threading_default'),
       help: trans('settings.threading_default_help'),
     }))
+    // Só com o flarum/messages ligado: sem ele, o "Enviar mensagem" é sempre o do chat.
+    .setting(() =>
+      isExtensionEnabled('flarum-messages')
+        ? {
+            setting: 'ramon-chat.direct_messages_provider',
+            type: 'select',
+            options: {
+              messages: text('settings.direct_messages_provider_messages'),
+              chat: text('settings.direct_messages_provider_chat'),
+            },
+            default: 'messages',
+            label: trans('settings.direct_messages_provider'),
+            help: trans('settings.direct_messages_provider_help'),
+          }
+        : null
+    )
 
     // ── Aparência ──
     .setting(() => ({

@@ -2,6 +2,7 @@ import app from 'flarum/forum/app';
 import Component from 'flarum/common/Component';
 import type { ComponentAttrs } from 'flarum/common/Component';
 import Button from 'flarum/common/components/Button';
+import Tooltip from 'flarum/common/components/Tooltip';
 import classList from 'flarum/common/utils/classList';
 import { realtimeLive } from '../realtime';
 import type Mithril from 'mithril';
@@ -10,7 +11,7 @@ import type Channel from '../../common/models/Channel';
 import type ChatState from '../state/ChatState';
 import { SidebarSkeleton } from './Skeletons';
 import { channelIcon } from '../utils/channelIcon';
-import { loadChannelFormModal } from '../utils/lazy';
+import { loadChannelFormModal, loadNewDirectModal } from '../utils/lazy';
 import { isOnline } from '../utils/presence';
 
 export interface ChatSidebarAttrs extends ComponentAttrs {
@@ -22,6 +23,13 @@ export interface ChatSidebarAttrs extends ComponentAttrs {
 interface SectionAction {
   icon: string;
   title: string;
+  action: () => void;
+}
+
+/** O que a seção mostra quando não tem nenhum canal. */
+interface SectionEmpty {
+  text: string;
+  cta: string;
   action: () => void;
 }
 
@@ -136,7 +144,30 @@ export default class ChatSidebar extends Component<ChatSidebarAttrs> {
                   : []),
               ])}
 
-              {this.section('ramon-chat.forum.sidebar.direct_messages', state.directChannels(), [])}
+              {/* Mesma permissão do servidor para abrir conversas. Com a ação, a seção
+                  aparece mesmo sem conversas, para a primeira ter por onde começar. */}
+              {this.section(
+                'ramon-chat.forum.sidebar.direct_messages',
+                state.directChannels(),
+                app.forum.attribute<boolean>('canStartChatDirect')
+                  ? [
+                      {
+                        icon: 'fas fa-paper-plane',
+                        title: app.translator.trans('ramon-chat.forum.sidebar.new_direct', {}, true),
+                        action: () => this.startDirect(),
+                      },
+                    ]
+                  : [],
+                // Como no Canela: sem conversas, a seção diz isso e oferece a primeira.
+                // Sidebar vazia de tudo já tem o próprio aviso, logo abaixo.
+                app.forum.attribute<boolean>('canStartChatDirect') && state.channels.length > 0
+                  ? {
+                      text: app.translator.trans('ramon-chat.forum.sidebar.no_direct', {}, true),
+                      cta: app.translator.trans('ramon-chat.forum.sidebar.new_direct', {}, true),
+                      action: () => this.startDirect(),
+                    }
+                  : undefined
+              )}
 
               {/* Sidebar vazia oferece saída, senão uma instalação nova fica sem caminho. */}
               {state.channelsLoaded && state.channels.length === 0 ? (
@@ -200,7 +231,7 @@ export default class ChatSidebar extends Component<ChatSidebarAttrs> {
   }
 
   /** Grupo de canais com título e ações (explorar, criar). */
-  protected section(labelKey: string, channels: Channel[], actions: SectionAction[]): Mithril.Children {
+  protected section(labelKey: string, channels: Channel[], actions: SectionAction[], empty?: SectionEmpty): Mithril.Children {
     if (channels.length === 0 && actions.length === 0) return null;
 
     return (
@@ -208,20 +239,24 @@ export default class ChatSidebar extends Component<ChatSidebarAttrs> {
         <div className="ChatSidebar-sectionHeader">
           <span>{app.translator.trans(labelKey)}</span>
           {actions.map((action) => (
-            <button
-              type="button"
-              key={action.icon}
-              className="ChatSidebar-sectionHeader-action"
-              title={action.title}
-              aria-label={action.title}
-              onclick={action.action}
-            >
-              <i className={action.icon} aria-hidden="true" />
-            </button>
+            <Tooltip key={action.icon} text={action.title}>
+              <button type="button" className="ChatSidebar-sectionHeader-action" aria-label={action.title} onclick={action.action}>
+                <i className={action.icon} aria-hidden="true" />
+              </button>
+            </Tooltip>
           ))}
         </div>
 
         {channels.map((channel) => this.row(channel))}
+
+        {channels.length === 0 && empty ? (
+          <div className="ChatSidebar-sectionEmpty">
+            <p>{empty.text}</p>
+            <Button className="Button Button--block" icon="fas fa-paper-plane" onclick={empty.action}>
+              {empty.cta}
+            </Button>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -310,6 +345,11 @@ export default class ChatSidebar extends Component<ChatSidebarAttrs> {
 
     window.clearTimeout(this.prefetchTimer);
     this.prefetchTimer = null;
+  }
+
+  /** Escolhe com quem conversar; o modal abre a conversa. */
+  protected startDirect(): void {
+    app.modal.show(loadNewDirectModal);
   }
 
   protected createChannel(): void {

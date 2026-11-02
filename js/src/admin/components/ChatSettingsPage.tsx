@@ -57,7 +57,13 @@ const SECTIONS: readonly Section[] = [
     key: 'channels',
     group: 'general',
     icon: 'fas fa-people-group',
-    keys: ['ramon-chat.channel_ownership', 'ramon-chat.allow_archiving_channels', 'ramon-chat.threading_default'],
+    // A última só existe com o flarum/messages ligado.
+    keys: [
+      'ramon-chat.channel_ownership',
+      'ramon-chat.allow_archiving_channels',
+      'ramon-chat.threading_default',
+      'ramon-chat.direct_messages_provider',
+    ],
   },
   {
     key: 'appearance',

@@ -25,6 +25,7 @@ export function loadChatUi(): ReturnType<typeof importChatUi> {
 export const loadChannelFormModal = () => import('../components/ChannelFormModal');
 export const loadChannelInfoModal = () => import('../components/ChannelInfoModal');
 export const loadAddMembersModal = () => import('../components/AddMembersModal');
+export const loadNewDirectModal = () => import('../components/NewDirectModal');
 const importChatFlagModal = () => import('../components/FlagMessageModal');
 const importFlagPostModal = () => import('ext:flarum/flags/forum/components/FlagPostModal');
 const importChatFlagPostModal = () => import('../components/ChatFlagPostModal');

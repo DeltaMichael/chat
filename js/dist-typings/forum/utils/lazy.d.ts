@@ -12,6 +12,7 @@ export declare function loadChatUi(): ReturnType<typeof importChatUi>;
 export declare const loadChannelFormModal: () => Promise<typeof import("../components/ChannelFormModal")>;
 export declare const loadChannelInfoModal: () => Promise<typeof import("../components/ChannelInfoModal")>;
 export declare const loadAddMembersModal: () => Promise<typeof import("../components/AddMembersModal")>;
+export declare const loadNewDirectModal: () => Promise<typeof import("../components/NewDirectModal")>;
 /**
  * Modal de denúncia: o do flarum/flags quando ativo, para a mensagem ser
  * denunciada como um post; senão o do chat.

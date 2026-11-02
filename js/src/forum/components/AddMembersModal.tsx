@@ -18,11 +18,17 @@ const MAX_PER_REQUEST = 50;
 /** Quantas pessoas recentes sugerir antes da digitação. */
 const SUGGESTIONS = 8;
 
-export interface AddMembersModalAttrs extends IFormModalAttrs {
-  channel: Channel;
+/** O que o seletor de pessoas precisa, com ou sem canal. */
+export interface UserPickerAttrs extends IFormModalAttrs {
   /** Já no canal: aparecem, mas não são selecionáveis. */
-  members: User[];
+  members?: User[];
   /** Convite pendente: aparecem, mas não são selecionáveis. */
+  invited?: User[];
+}
+
+export interface AddMembersModalAttrs extends UserPickerAttrs {
+  channel: Channel;
+  members: User[];
   invited: User[];
   /** Recebe as pessoas enviadas ao servidor para convite. */
   onAdded: (users: User[]) => void;
@@ -34,8 +40,11 @@ export interface AddMembersModalAttrs extends IFormModalAttrs {
  * Sem digitação, sugere quem foi visto por último. Membros e convidados aparecem
  * marcados e não selecionáveis. Setas navegam, Enter escolhe, Backspace no campo
  * vazio remove o último chip e Escape limpa a busca.
+ *
+ * O seletor serve a outros fluxos: subclasses trocam o texto, o limite e o envio
+ * (ver NewDirectModal).
  */
-export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
+export default class AddMembersModal<A extends UserPickerAttrs = AddMembersModalAttrs> extends FormModal<A> {
   private query = '';
   private results: User[] = [];
   private suggestions: User[] = [];
@@ -48,13 +57,13 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
   /** Impede que uma busca antiga resolva depois de uma mais nova. */
   private sequence = 0;
 
-  oninit(vnode: Mithril.Vnode<AddMembersModalAttrs, this>): void {
+  oninit(vnode: Mithril.Vnode<A, this>): void {
     super.oninit(vnode);
 
     void this.loadSuggestions();
   }
 
-  onremove(vnode: Mithril.VnodeDOM<AddMembersModalAttrs, this>): void {
+  onremove(vnode: Mithril.VnodeDOM<A, this>): void {
     super.onremove(vnode);
 
     if (this.timer !== null) window.clearTimeout(this.timer);
@@ -71,11 +80,7 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
   content(): Mithril.Children {
     return (
       <div className="Modal-body ChatAddMembers-body">
-        <p className="ChatAddMembers-intro">
-          {app.translator.trans('ramon-chat.forum.add_members.intro', {
-            channel: (<strong>{this.attrs.channel.displayName()}</strong>) as unknown as string,
-          })}
-        </p>
+        <p className="ChatAddMembers-intro">{this.intro()}</p>
 
         <div className="ChatAddMembers-field" onclick={() => this.focusInput()}>
           <i className="ChatAddMembers-field-icon fas fa-magnifying-glass" aria-hidden="true" />
@@ -220,20 +225,48 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
     );
   }
 
+  // ── Pontos que as subclasses trocam ──
+
+  protected intro(): Mithril.Children {
+    return app.translator.trans('ramon-chat.forum.add_members.intro', {
+      channel: (<strong>{this.invite().channel.displayName()}</strong>) as unknown as string,
+    });
+  }
+
+  /** Quantas pessoas cabem num envio. */
+  protected maxSelection(): number {
+    return MAX_PER_REQUEST;
+  }
+
+  protected tooManyText(max: number): Mithril.Children {
+    return app.translator.trans('ramon-chat.api.members_too_many', { max });
+  }
+
+  protected submitText(count: number): Mithril.Children {
+    return count === 0
+      ? app.translator.trans('ramon-chat.forum.add_members.submit')
+      : app.translator.trans('ramon-chat.forum.add_members.submit_count', { count });
+  }
+
+  /** Envia a seleção. Resolve true para fechar o modal; false o deixa aberto. */
+  protected submit(chosen: User[]): Promise<boolean> {
+    return this.sendInvites(chosen);
+  }
+
+  /** Os attrs do convite, que só este fluxo tem. */
+  protected invite(): AddMembersModalAttrs {
+    return this.attrs as unknown as AddMembersModalAttrs;
+  }
+
   protected footer(): Mithril.Children {
     const count = this.selected.length;
-    const tooMany = count > MAX_PER_REQUEST;
+    const max = this.maxSelection();
+    const tooMany = count > max;
 
     return (
       <div className="Modal-footer ChatAddMembers-footer">
         <span className="ChatAddMembers-footer-count">
-          {tooMany
-            ? app.translator.trans('ramon-chat.api.members_too_many', {
-                max: MAX_PER_REQUEST,
-              })
-            : count > 0
-              ? app.translator.trans('ramon-chat.forum.add_members.selected_count', { count })
-              : null}
+          {tooMany ? this.tooManyText(max) : count > 0 ? app.translator.trans('ramon-chat.forum.add_members.selected_count', { count }) : null}
         </span>
 
         <Button className="Button Button--link" type="button" disabled={this.loading} onclick={() => this.hide()}>
@@ -247,11 +280,7 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
           loading={this.loading}
           disabled={this.loading || count === 0 || tooMany}
         >
-          {count === 0
-            ? app.translator.trans('ramon-chat.forum.add_members.submit')
-            : app.translator.trans('ramon-chat.forum.add_members.submit_count', {
-                count,
-              })}
+          {this.submitText(count)}
         </Button>
       </div>
     );
@@ -273,8 +302,8 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
     const id = user.id();
 
     if (id === app.session.user?.id()) return 'you';
-    if (this.attrs.members.some((member) => member.id() === id)) return 'member';
-    if (this.attrs.invited.some((pending) => pending.id() === id)) {
+    if ((this.attrs.members ?? []).some((member) => member.id() === id)) return 'member';
+    if ((this.attrs.invited ?? []).some((pending) => pending.id() === id)) {
       return 'invited';
     }
 
@@ -347,7 +376,7 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
    * API responde 400); senão, por quem mais posta.
    */
   protected async loadSuggestions(): Promise<void> {
-    const limit = SUGGESTIONS + 1 + this.attrs.members.length;
+    const limit = SUGGESTIONS + 1 + (this.attrs.members ?? []).length;
     // Admin tem toda permissão; para os demais, `lastSeenAt` fica como fallback.
     const orders = app.session.user?.isAdmin() ? ['-lastSeenAt', '-commentCount'] : ['-commentCount', '-lastSeenAt'];
 
@@ -429,21 +458,32 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
     this.loading = true;
     m.redraw();
 
-    const chosen = this.selected;
+    void this.submit(this.selected).then((done) => {
+      if (done) {
+        this.hide();
 
-    app
+        return;
+      }
+
+      this.loading = false;
+      m.redraw();
+    });
+  }
+
+  /** O convite ao canal: uma requisição para a seleção inteira. */
+  protected sendInvites(chosen: User[]): Promise<boolean> {
+    const attrs = this.invite();
+
+    return app
       .request<any>({
         method: 'POST',
-        url: `${app.forum.attribute('apiUrl')}/chat-channels/${this.attrs.channel.id()}/members`,
-        // Uma requisição para a seleção inteira: o endpoint aceita lista.
+        url: `${app.forum.attribute('apiUrl')}/chat-channels/${attrs.channel.id()}/members`,
         body: {
           data: { attributes: { userIds: chosen.map((u) => Number(u.id())) } },
         },
       })
       .then((payload) => {
         if (payload?.data) app.store.pushPayload(payload);
-
-        this.hide();
 
         app.alerts.show(
           { type: 'success' },
@@ -453,18 +493,18 @@ export default class AddMembersModal extends FormModal<AddMembersModalAttrs> {
           })
         );
 
-        this.attrs.onAdded(chosen);
+        attrs.onAdded(chosen);
+
+        return true;
       })
       .catch((error: any) => {
-        this.loading = false;
-
         if (error?.alert) {
           this.onerror(error);
         } else {
           app.alerts.show({ type: 'error' }, error?.response?.errors?.[0]?.detail ?? app.translator.trans('ramon-chat.forum.add_members.failed'));
-
-          m.redraw();
         }
+
+        return false;
       });
   }
 }
