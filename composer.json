@@ -71,6 +71,7 @@
                 "pianotell/flarum-ext-flamoji",
                 "flarum/gdpr",
                 "flarum/audit",
+                "flarum/messages",
                 "fof/upload"
             ],
             "icon": {

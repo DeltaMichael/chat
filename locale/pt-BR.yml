@@ -144,6 +144,8 @@ ramon-chat:
       direct_messages: Mensagens diretas
       browse_channels: Explorar canais
       new_channel: Novo canal
+      new_direct: Iniciar uma conversa
+      no_direct: Você ainda não tem mensagens diretas.
       no_channels: Você ainda não entrou em nenhum canal.
       back_to_channels: Voltar aos canais
 
@@ -404,6 +406,13 @@ ramon-chat:
       lifecycle_help: Fechar impede novas mensagens mas mantém o canal legível. Arquivar copia o histórico para uma discussão e congela o canal até ser desarquivado.
       archive_confirm: Arquivar este canal? O histórico é copiado para uma discussão e o canal fica congelado até ser desarquivado.
 
+    new_direct:
+      title: Nova mensagem direta
+      intro: Escolha uma pessoa para uma conversa a dois, ou várias para um grupo. Se já existe uma conversa com as mesmas pessoas, ela abre de novo.
+      submit: Iniciar conversa
+      submit_group: Iniciar conversa em grupo
+      too_many: "Uma conversa comporta até {max} outras pessoas."
+
     add_members:
       title: Convidar membros
       intro: "Cada pessoa escolhida recebe uma notificação e decide se entra em {channel}."
@@ -637,6 +646,10 @@ ramon-chat:
       channel_ownership_help: "Com os membros no comando, a grade de permissões abaixo se divide em dois blocos. \"Chat: global\" vale para todo o chat, em todos os canais. \"Chat: canais dos membros\" vale só dentro dos canais que os membros criam e administram: criar, gerenciar, editar, e o que os membros podem enviar neles. O dono de um canal pode promover membros a moderadores daquele canal; donos e moderadores do canal não passam pelo modo lento. Administradores e moderadores do chat continuam com todos os canais."
       allow_archiving_channels_help: Um canal fechado pode ser arquivado em uma discussão que guarda a transcrição.
       threading_default_help: Canais novos começam com tópicos ligados. Cada canal pode mudar isso.
+      direct_messages_provider: '"Enviar mensagem" abre'
+      direct_messages_provider_messages: Mensagens privadas (flarum/messages)
+      direct_messages_provider_chat: Uma conversa direta no chat
+      direct_messages_provider_help: Com o flarum/messages ligado, os dois oferecem "Enviar mensagem" no perfil e no menu do usuário. Escolha qual o botão abre; o outro continua na própria página.
       retention_warning: A retenção exclui mensagens para sempre. Não há como desfazer.
       channel_retention_days: Retenção em canais (dias)
       channel_retention_help: Dias de retenção em canais de categoria. 0 mantém para sempre.

@@ -134,6 +134,9 @@ return [
         ->default('ramon-chat.fof_upload_adapter', '')
         ->default('ramon-chat.allow_archiving_channels', true)
         ->default('ramon-chat.threading_default', false)
+        // Com o flarum/messages ativo, quem atende o "Enviar mensagem": 'messages'
+        // (o dele, padrão) ou 'chat'. Sem ele, o chat sempre oferece o seu.
+        ->default('ramon-chat.direct_messages_provider', 'messages')
         // Pushes realtime pela fila. Desligado por padrão: a fila de banco do Flarum
         // roda a cada minuto, atraso inaceitável no chat. Ligue só com worker
         // contínuo (ver Realtime\ChatBroadcaster).
@@ -151,6 +154,7 @@ return [
         ->serializeToForum('ramon-chat.maxUploadSize', 'ramon-chat.max_upload_size', 'intval')
         ->serializeToForum('ramon-chat.allowUploads', 'ramon-chat.allow_uploads', 'boolval')
         ->serializeToForum('ramon-chat.threadingDefault', 'ramon-chat.threading_default', 'boolval')
+        ->serializeToForum('ramon-chat.directMessagesProvider', 'ramon-chat.direct_messages_provider')
         ->serializeToForum('ramon-chat.notificationSound', 'ramon-chat.notification_sound')
         ->serializeToForum('ramon-chat.title', 'ramon-chat.title')
         ->serializeToForum('ramon-chat.icon', 'ramon-chat.icon')

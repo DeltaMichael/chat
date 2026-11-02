@@ -34,6 +34,7 @@ import { chatTitle, chatIcon } from './utils/branding';
 import ChatPageResolver from './resolvers/ChatPageResolver';
 import bindFlagsIntegration from './utils/flagsIntegration';
 import { loadChatUi } from './utils/lazy';
+import { startDirect } from './utils/startDirect';
 
 export { default as extend } from './extend';
 
@@ -224,35 +225,6 @@ app.initializers.add('ramon-chat', () => {
     );
   });
 
-  // ── "Chat" no perfil e no dropdown de controles do usuário ──
-  // Mesmo ponto que o flarum/messages usa para "Enviar mensagem".
-  //
-  // Nomeado em vez de inline: `@ts-ignore` só vale para a próxima linha, e o
-  // formatter quebraria a chamada longa em várias. A tipagem publicada do
-  // UserControls perde o parâmetro `user`, embora ele seja passado em runtime.
-  const addChatToUserControls = (items: ItemList<Mithril.Children>, user: User) => {
-    if (!canUseChat()) return;
-    if (!app.forum.attribute<boolean>('canStartChatDirect')) return;
-
-    if (app.session.user?.id() === user.id()) return;
-
-    // Com o flarum/messages ativo já existe "Enviar mensagem"; outra entrada para DM
-    // do chat seria redundante.
-    if ('flarum-messages' in flarum.extensions) return;
-
-    items.add(
-      'chatDirect',
-      <Button icon="fas fa-envelope" onclick={() => startDirectMessage(user)}>
-        {app.translator.trans('ramon-chat.forum.user_controls.start_chat')}
-      </Button>,
-      // Logo abaixo do botão do flarum/messages, que fica na prioridade padrão 0.
-      -5
-    );
-  };
-
-  // @ts-ignore
-  extend(UserControls, 'userControls', addChatToUserControls);
-
   // O que lê `app.forum`/`app.session` ou monta uma raiz Mithril própria precisa
   // rodar depois de ForumApplication.mount(): o boot() roda os initializers antes de
   // preencher `forum` e `session`, e o mount() é quem chama m.route().
@@ -327,66 +299,56 @@ app.initializers.add('ramon-chat', () => {
   });
 });
 
+// ── "Chat" no perfil e no dropdown de controles do usuário ──
+// Mesmo ponto que o flarum/messages usa para "Enviar mensagem".
+//
+// Nomeado em vez de inline: `@ts-ignore` só vale para a próxima linha, e o
+// formatter quebraria a chamada longa em várias. A tipagem publicada do
+// UserControls perde o parâmetro `user`, embora ele seja passado em runtime.
+const addChatToUserControls = (items: ItemList<Mithril.Children>, user: User) => {
+  if (!canUseChat()) return;
+  if (!app.forum.attribute<boolean>('canStartChatDirect')) return;
+
+  if (app.session.user?.id() === user.id()) return;
+
+  // Com o flarum/messages ativo, o admin escolhe quem atende "Enviar mensagem".
+  // Quem não pode usar o chat já saiu acima e fica com o botão do flarum/messages.
+  const withMessages = 'flarum-messages' in flarum.extensions;
+
+  if (withMessages) {
+    if (app.forum.attribute<string>('ramon-chat.directMessagesProvider') !== 'chat') return;
+
+    if (items.has('sendMessage')) items.remove('sendMessage');
+  }
+
+  items.add(
+    'chatDirect',
+    <Button icon="fas fa-envelope" onclick={() => startDirectMessage(user)}>
+      {app.translator.trans('ramon-chat.forum.user_controls.start_chat')}
+    </Button>,
+    // No lugar do botão do flarum/messages, que fica na prioridade padrão 0.
+    withMessages ? 0 : -5
+  );
+};
+
+// Num initializer próprio de prioridade baixa: roda depois do flarum/messages
+// qualquer que seja a ordem de carga das extensões, então o botão dele já está na
+// lista para ser trocado.
+app.initializers.add(
+  'ramon-chat-user-controls',
+  () => {
+    // @ts-ignore
+    extend(UserControls, 'userControls', addChatToUserControls);
+  },
+  -100
+);
+
 /**
- * Abre (ou cria) um canal direto com o usuário e o mostra. O endpoint só reusa a
- * conversa enquanto todos os participantes estão nela; depois que alguém sai, um
- * novo início abre outro canal.
+ * Abre (ou cria) a conversa direta com o usuário. Fica exportada para outras
+ * extensões; o trabalho está em `utils/startDirect`.
  */
 export async function startDirectMessage(user: User): Promise<void> {
-  try {
-    const payload = await app.request<{
-      data?: { id?: string };
-      meta?: { created?: boolean; serialized?: boolean };
-    }>({
-      method: 'POST',
-      url: `${app.forum.attribute('apiUrl')}/chat/direct`,
-      body: { data: { attributes: { userIds: [Number(user.id())] } } },
-    });
-
-    const channelId = Number(payload?.data?.id);
-
-    if (!channelId) return;
-
-    // O endpoint serializa o canal encontrado ou criado, então a conversa chega com o
-    // POST (ver StartDirectController::serialize).
-    let channel: Channel | null = null;
-
-    if (payload.meta?.serialized) {
-      try {
-        channel = app.store.pushPayload(payload as never) as unknown as Channel;
-      } catch {
-        // Cai no fetch abaixo.
-      }
-    }
-
-    if (!channel) {
-      try {
-        channel = (await app.store.find('chat-channels', String(channelId))) as unknown as Channel;
-      } catch {
-        // O canal existe; um fetch falho só adia a atualização da lista.
-      }
-    }
-
-    if (channel) chatState.rememberChannel(channel);
-
-    // Conversa recém-criada não tem histórico nem fixada; semear os dois evita dois
-    // requests que voltariam vazios.
-    if (payload.meta?.created) {
-      chatState.seedEmptyChannel(channelId);
-    }
-
-    chatState.setActiveChannel(channelId);
-
-    if (shouldUseChatDrawer()) {
-      // Sem await: a gaveta pinta no primeiro frame e a lista de canais não é o que o
-      // leitor veio ver.
-      ChatDrawer.open().catch(() => {});
-    } else {
-      m.route.set(app.route('chat.channel', { id: channelId }));
-    }
-  } catch (e: any) {
-    app.alerts.show({ type: 'error' }, e?.response?.errors?.[0]?.detail ?? app.translator.trans('ramon-chat.forum.user_controls.start_chat_failed'));
-  }
+  await startDirect([user]);
 }
 
 function mountDrawer(): void {

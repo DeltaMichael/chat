@@ -413,8 +413,17 @@ body.ChatFullPage {
     color: var(--avocado-muted-label);
 
     // Só o primeiro vai para a direita; o gap do mixin de linha separa os demais.
+    // O Tooltip do Flarum envolve o botão, então a regra vale para os dois.
+    > :not(span):first-of-type,
     &-action:first-of-type {
       margin-left: auto;
+    }
+
+    // O tooltip é inserido dentro do cabeçalho e herdaria o caixa-alta do título.
+    .tooltip {
+      font-weight: normal;
+      letter-spacing: normal;
+      text-transform: none;
     }
 
     &-action {
@@ -2293,6 +2302,18 @@ body.ChatFullPage {
     flex-direction: column;
     gap: @chat-space-sm;
     align-self: stretch;
+  }
+}
+
+// Seção sem canais, como a de mensagens diretas antes da primeira conversa.
+.ChatSidebar-sectionEmpty {
+  padding: @chat-space-xs @chat-space-md @chat-space-md;
+
+  p {
+    margin: 0 0 @chat-space-sm;
+    font-size: @chat-font-label;
+    line-height: 1.5;
+    color: var(--avocado-muted-label);
   }
 }
 
