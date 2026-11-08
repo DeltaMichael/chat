@@ -1,0 +1,15 @@
+ramon-chat:
+  forum:
+    nav:
+      chat: Чат
+
+    sidebar:
+      my_threads: Моите нишки
+      bookmarks: Отметки
+      search: Търсене
+      flags: Докладвани съобщения
+      channels: Канали
+      direct_messages: Директни съобщения
+      browse_channels: Разгледайте каналите
+      new_channel: Нов канал
+      no_channels: Все още не сте се присъединили към канали.
