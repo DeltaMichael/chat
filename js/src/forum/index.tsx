@@ -18,6 +18,7 @@ import MessageFlag from '../common/models/MessageFlag';
 import chatState from './state/chat';
 import ChatState from './state/ChatState';
 import ChatNavButton from './components/ChatNavButton';
+import ChatMentionEmailSetting from './components/ChatMentionEmailSetting';
 import ChatDrawer, { loadDrawerPanel } from './components/ChatDrawer';
 import ChannelInviteNotification from './components/ChannelInviteNotification';
 import ChannelInviteDeclinedNotification from './components/ChannelInviteDeclinedNotification';
@@ -152,6 +153,12 @@ app.initializers.add('ramon-chat', () => {
   // ── Notificações ──
   // Os componentes dos alertas vêm de ./extend; aqui fica a linha nas preferências
   // de notificação.
+  extend('flarum/forum/components/SettingsPage', 'notificationsItems', function (items: ItemList<unknown>) {
+    if (app.session.user) {
+      items.add('chatMentionEmail', <ChatMentionEmailSetting user={app.session.user} />, 95);
+    }
+  });
+
   extend('flarum/forum/components/NotificationGrid', 'notificationTypes', function (items: ItemList<unknown>) {
     items.add('chatChannelInvite', {
       name: 'chatChannelInvite',

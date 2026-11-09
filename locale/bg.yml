@@ -3,6 +3,9 @@ ramon-chat:
     nav:
       chat: Чат
 
+    settings:
+      email_notifications: Получавай имейли при споменаване в чата
+
     sidebar:
       my_threads: Моите нишки
       bookmarks: Отметки
