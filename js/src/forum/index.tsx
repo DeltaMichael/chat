@@ -35,6 +35,7 @@ import ChatPageResolver from './resolvers/ChatPageResolver';
 import bindFlagsIntegration from './utils/flagsIntegration';
 import { loadChatUi } from './utils/lazy';
 import { startDirect } from './utils/startDirect';
+import PollScheduler from './utils/PollScheduler';
 
 export { default as extend } from './extend';
 
@@ -252,7 +253,7 @@ app.initializers.add('ramon-chat', () => {
       setConnectionHandlers({
         reconnect: () => {
           lastChannelPoll = 0;
-          poll();
+          pollScheduler.wake();
         },
         change: () => reschedulePolling(),
       });
@@ -265,11 +266,11 @@ app.initializers.add('ramon-chat', () => {
         if (document.hidden) {
           chatState.flushSnapshot();
         } else if (!realtimeLive()) {
-          poll();
+          pollScheduler.wake();
         }
       });
       window.addEventListener('online', () => {
-        if (!realtimeLive()) poll();
+        if (!realtimeLive()) pollScheduler.wake();
       });
       window.addEventListener('pagehide', () => chatState.flushSnapshot());
 
@@ -381,9 +382,6 @@ function canUseChat(): boolean {
   return app.session.user.preferences()?.['ramon-chat.enabled'] !== false;
 }
 
-/** Evita um segundo loop quando os dois chamadores pedem um. */
-let polling = false;
-
 /**
  * Ligado quando o servidor responde 401 a um poll em segundo plano: a sessão
  * acabou (expirou ou saiu em outra aba). Continuar perguntando geraria o alerta de
@@ -421,32 +419,14 @@ const backgroundErrorHandler = (error: { status?: number }): false | void => {
  * Timeout encadeado em vez de setInterval para o ritmo mudar na sessão. Só roda com
  * o documento visível.
  */
+const pollScheduler = new PollScheduler(poll, pollInterval);
+
 function startPolling(): void {
-  if (polling) return;
-
-  polling = true;
-  schedulePoll();
+  pollScheduler.start();
 }
 
-let pollTimer: number | null = null;
-
-function schedulePoll(): void {
-  pollTimer = window.setTimeout(() => {
-    poll();
-    schedulePoll();
-  }, pollInterval());
-}
-
-/**
- * Reinicia a contagem no ritmo atual. Chamado quando o socket cai ou volta, para o
- * cliente desconectado não esperar um timeout agendado enquanto estava online.
- */
 function reschedulePolling(): void {
-  if (!polling) return;
-
-  if (pollTimer !== null) window.clearTimeout(pollTimer);
-
-  schedulePoll();
+  pollScheduler.reschedule();
 }
 
 /** Tempo até o próximo poll, lido a cada tick para o ritmo mudar sem reiniciar nada. */
@@ -461,94 +441,99 @@ function pollInterval(): number {
 /** Quando a lista de canais foi atualizada pela última vez; ver CHANNEL_POLL_INTERVAL. */
 let lastChannelPoll = 0;
 
-function poll(): void {
-  if (document.hidden) return;
-  if (sessionLost) return;
-  if (!chatState.channelsLoaded) return;
+async function poll(): Promise<boolean> {
+  if (document.hidden || sessionLost || !chatState.channelsLoaded) return false;
 
   const now = Date.now();
   const channelFloor = realtimeLive() ? CHANNEL_POLL_INTERVAL_PROVEN : CHANNEL_POLL_INTERVAL;
+  const requests: Promise<unknown>[] = [];
 
   if (now - lastChannelPoll >= channelFloor) {
     lastChannelPoll = now;
 
     // Forçado: a lista fica em cache na sessão para a navegação não refazer o pedido,
     // e o poller é justamente quem a mantém atual sem websocket.
-    chatState.loadChannels(true, backgroundErrorHandler).catch(() => {});
+    requests.push(chatState.loadChannels(true, backgroundErrorHandler));
   }
 
   const activeId = chatState.activeChannelId;
 
-  if (activeId === null) return;
+  const stream = activeId === null ? null : chatState.streams[activeId];
 
-  const stream = chatState.streams[activeId];
+  if (activeId !== null && stream && !stream.loading) {
+    // Só o que for mais novo que a última mensagem conhecida.
+    const newest = stream.messages[stream.messages.length - 1];
 
-  if (!stream || stream.loading) return;
+    requests.push(
+      app.store
+        .find<Message[]>(
+          'chat-messages',
+          {
+            filter: {
+              channel: activeId,
+              ...(newest ? { greaterThan: Number(newest.id()) } : {}),
+            },
+            sort: 'id',
+            page: { limit: 50 },
+          },
+          undefined,
+          { errorHandler: backgroundErrorHandler }
+        )
+        .then((results) => {
+          for (const message of (Array.isArray(results) ? results : []) as Message[]) {
+            chatState.upsertMessage(message);
+          }
 
-  // Só o que for mais novo que a última mensagem conhecida.
-  const newest = stream.messages[stream.messages.length - 1];
+          m.redraw();
+        })
+    );
 
-  app.store
-    .find<Message[]>(
-      'chat-messages',
-      {
-        filter: {
-          channel: activeId,
-          ...(newest ? { greaterThan: Number(newest.id()) } : {}),
-        },
-        sort: 'id',
-        page: { limit: 50 },
-      },
-      undefined,
-      { errorHandler: backgroundErrorHandler }
-    )
-    .then((results) => {
-      for (const message of (Array.isArray(results) ? results : []) as Message[]) {
-        chatState.upsertMessage(message);
-      }
+    const changes = pollChanges(`channel:${activeId}`, { channel: activeId }, stream.messages);
+    if (changes) requests.push(changes);
 
-      m.redraw();
-    })
-    .catch(() => {});
+    // O painel de tópico renderiza do próprio stream, e o filtro do canal exclui
+    // respostas de tópico; sem isto o tópico aberto nunca seria consultado.
+    const threadId = chatState.activeThreadId;
 
-  pollChanges(`channel:${activeId}`, { channel: activeId }, stream.messages);
+    const threadStream = threadId === null ? null : chatState.threadStreams[threadId];
 
-  // O painel de tópico renderiza do próprio stream, e o filtro do canal exclui
-  // respostas de tópico; sem isto o tópico aberto nunca seria consultado.
-  const threadId = chatState.activeThreadId;
+    if (threadId !== null && threadStream && !threadStream.loading) {
+      const newestReply = threadStream.messages[threadStream.messages.length - 1];
 
-  if (threadId === null) return;
+      requests.push(
+        app.store
+          .find<Message[]>(
+            'chat-messages',
+            {
+              filter: {
+                thread: threadId,
+                ...(newestReply ? { greaterThan: Number(newestReply.id()) } : {}),
+              },
+              sort: 'id',
+              page: { limit: 50 },
+            },
+            undefined,
+            { errorHandler: backgroundErrorHandler }
+          )
+          .then((results) => {
+            for (const message of (Array.isArray(results) ? results : []) as Message[]) {
+              chatState.upsertMessage(message);
+            }
 
-  const threadStream = chatState.threadStreams[threadId];
+            m.redraw();
+          })
+      );
 
-  if (!threadStream || threadStream.loading) return;
+      const threadChanges = pollChanges(`thread:${threadId}`, { thread: threadId }, threadStream.messages);
+      if (threadChanges) requests.push(threadChanges);
+    }
+  }
 
-  const newestReply = threadStream.messages[threadStream.messages.length - 1];
-
-  app.store
-    .find<Message[]>(
-      'chat-messages',
-      {
-        filter: {
-          thread: threadId,
-          ...(newestReply ? { greaterThan: Number(newestReply.id()) } : {}),
-        },
-        sort: 'id',
-        page: { limit: 50 },
-      },
-      undefined,
-      { errorHandler: backgroundErrorHandler }
-    )
-    .then((results) => {
-      for (const message of (Array.isArray(results) ? results : []) as Message[]) {
-        chatState.upsertMessage(message);
-      }
-
-      m.redraw();
-    })
-    .catch(() => {});
-
-  pollChanges(`thread:${threadId}`, { thread: threadId }, threadStream.messages);
+  if (!requests.length) return false;
+  const results = await Promise.allSettled(requests);
+  const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failed) throw failed.reason;
+  return true;
 }
 
 /**
@@ -567,12 +552,12 @@ const changeCursors = new Map<string, number>();
  * e o stream guarda esses mesmos objetos. Inserir encaixaria uma mensagem de fora
  * da janela no meio dela.
  */
-function pollChanges(key: string, filter: Record<string, unknown>, messages: Message[]): void {
+function pollChanges(key: string, filter: Record<string, unknown>, messages: Message[]): Promise<void> | null {
   const since = changeCursors.get(key) ?? newestChange(messages);
 
-  if (since === null) return;
+  if (since === null) return null;
 
-  app.store
+  return app.store
     .find<Message[]>(
       'chat-messages',
       {
@@ -595,8 +580,7 @@ function pollChanges(key: string, filter: Record<string, unknown>, messages: Mes
       }
 
       m.redraw();
-    })
-    .catch(() => {});
+    });
 }
 
 /**
