@@ -1301,15 +1301,18 @@ body.ChatFullPage {
 // Anexos.
 .ChatUploads {
   display: flex;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
 
   &-image {
+    display: block;
     width: auto;
     height: auto;
     max-width: ~"min(320px, 100%)";
     max-height: ~"min(70vh, 560px)";
+    margin: 0;
     border-radius: @chat-radius-sm;
     border: 1px solid var(--avocado-border-subtle);
     // The stored dimensions reserve space without flattening portrait screenshots.
@@ -3953,6 +3956,9 @@ body.ChatFullPage {
 // A miniatura é um botão e herda borda e padding do navegador.
 .ChatUploads-imageButton {
   display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0;
   padding: 0;
   border: 0;
   background: none;
