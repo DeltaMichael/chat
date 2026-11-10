@@ -82,9 +82,11 @@ function normalise(input: string): string {
 export function looksLikeEmoji(input: string): boolean {
   const value = input.trim();
 
-  if (value === '' || value.length > 8) return false;
+  if (value === '' || Array.from(value).length > 60) return false;
 
-  return /[\p{Extended_Pictographic}\p{Emoji_Presentation}]/u.test(value);
+  return /^(?=.*[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}\u20E3])[\p{Extended_Pictographic}\p{Emoji_Presentation}\p{Emoji_Modifier}\p{Regional_Indicator}\uFE0E\uFE0F\u200D\u20E3\u{E0020}-\u{E007F}#*0-9]+$/u.test(
+    value
+  );
 }
 
 /**
@@ -111,6 +113,22 @@ export function displayEmoji(input: string | null | undefined, fallback = ''): s
   if (!input) return fallback;
 
   return resolveEmoji(input) ?? `:${normalise(input)}:`;
+}
+
+/**
+ * Validates the Flamoji selection as a shortcode or Unicode emoji sequence. Custom
+ * emoji arrive as shortcodes; built-in emoji are stored as their selected glyph.
+ */
+export function reactionValue(input: string): string | null {
+  const value = input.trim();
+
+  if (!value) return null;
+
+  const name = normalise(value);
+
+  if (/^[a-z0-9_+-]{1,60}$/i.test(name)) return name;
+
+  return looksLikeEmoji(value) ? value : null;
 }
 
 export interface EmojiSuggestion {

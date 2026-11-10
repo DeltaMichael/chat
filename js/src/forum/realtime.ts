@@ -614,10 +614,19 @@ function onReaction(data: { messageId: number; emoji: string; userId: number; ad
 
   if (!message) return;
 
-  const summary = { ...(message.reactionSummary() ?? {}) };
+  const summary = Object.fromEntries(Object.entries(message.reactionSummary() ?? {}).map(([emoji, entry]) => [emoji, { ...entry }]));
   const entry = summary[data.emoji] ?? { count: 0, reacted: false };
 
   const isActor = Number(app.session.user?.id()) === data.userId;
+
+  if (isActor && data.added) {
+    for (const [emoji, ownEntry] of Object.entries(summary)) {
+      if (!ownEntry.reacted || emoji === data.emoji) continue;
+
+      ownEntry.count = Math.max(0, ownEntry.count - 1);
+      if (ownEntry.count === 0) delete summary[emoji];
+    }
+  }
 
   summary[data.emoji] = {
     count: Math.max(0, entry.count + (data.added ? 1 : -1)),

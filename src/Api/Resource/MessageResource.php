@@ -61,13 +61,8 @@ class MessageResource extends AbstractDatabaseResource
     ) {
     }
 
-    /**
-     * Limites de reações, que qualquer leitor pode criar. Vinte tipos já passam do
-     * que a fileira de chips mostra; dez de uma pessoa é usar a barra de teclado.
-     */
+    /** Limite de tipos distintos de reação por mensagem. */
     protected const MAX_DISTINCT_REACTIONS = 20;
-
-    protected const MAX_REACTIONS_PER_USER = 10;
 
     public function type(): string
     {
@@ -338,30 +333,44 @@ class MessageResource extends AbstractDatabaseResource
                     $existing = MessageReaction::query()
                         ->where('message_id', $message->id)
                         ->where('user_id', $actor->id)
-                        ->where('emoji', $emoji)
                         ->first();
 
-                    if ($existing !== null) {
+                    $previousEmoji = null;
+
+                    if ($existing !== null && $existing->emoji === $emoji) {
                         $existing->delete();
                         $added = false;
                     } else {
-                        $this->assertRoomForReaction($message, $actor, $emoji);
+                        $this->assertRoomForReaction($message, $emoji, $existing?->emoji);
 
-                        $reaction = new MessageReaction();
-                        $reaction->message_id = $message->id;
-                        $reaction->user_id = $actor->id;
-                        $reaction->emoji = $emoji;
-                        $reaction->created_at = Carbon::now();
+                        if ($existing !== null) {
+                            $previousEmoji = $existing->emoji;
+                            $existing->emoji = $emoji;
+                            $existing->created_at = Carbon::now();
 
-                        // Dois cliques em corrida passam pela busca acima e tentam
-                        // inserir; o índice único fica com um, e o outro vê a reação
-                        // existente em vez de um 500.
-                        try {
-                            $reaction->save();
-                        } catch (UniqueConstraintViolationException) {
-                            $message->unsetRelation('reactions');
+                            try {
+                                $existing->save();
+                            } catch (UniqueConstraintViolationException) {
+                                $message->unsetRelation('reactions');
 
-                            return $message;
+                                return $message;
+                            }
+                        } else {
+                            $previousEmoji = null;
+                            $reaction = new MessageReaction();
+                            $reaction->message_id = $message->id;
+                            $reaction->user_id = $actor->id;
+                            $reaction->emoji = $emoji;
+                            $reaction->created_at = Carbon::now();
+
+                            // O índice único protege também contra dois cliques em corrida.
+                            try {
+                                $reaction->save();
+                            } catch (UniqueConstraintViolationException) {
+                                $message->unsetRelation('reactions');
+
+                                return $message;
+                            }
                         }
 
                         $added = true;
@@ -373,6 +382,10 @@ class MessageResource extends AbstractDatabaseResource
                     // muda, e o polling de fallback reconcilia por essa coluna. O
                     // touch faz a reação chegar sem websocket (ver MessageChangedFilter).
                     $message->touch();
+
+                    if ($added && $previousEmoji !== null) {
+                        $this->events->dispatch(new ReactionToggled($message, $actor, $previousEmoji, false));
+                    }
 
                     $this->events->dispatch(new ReactionToggled($message, $actor, $emoji, $added));
 
@@ -811,38 +824,52 @@ class MessageResource extends AbstractDatabaseResource
      *
      * @throws ValidationException
      */
-    protected function assertRoomForReaction(Message $message, User $actor, string $emoji): void
+    protected function assertRoomForReaction(Message $message, string $emoji, ?string $previousEmoji): void
     {
         $existing = MessageReaction::query()->where('message_id', $message->id);
 
         $kinds = (clone $existing)->distinct()->pluck('emoji')->map(fn ($e) => strtolower((string) $e));
 
-        if ($kinds->count() >= self::MAX_DISTINCT_REACTIONS && ! $kinds->contains(strtolower($emoji))) {
-            throw new ValidationException([
-                'emoji' => $this->translator->trans('ramon-chat.api.reaction_limit'),
-            ]);
-        }
+        if (! $kinds->contains(strtolower($emoji))) {
+            $distinctCount = $kinds->count();
 
-        if ((clone $existing)->where('user_id', $actor->id)->count() >= self::MAX_REACTIONS_PER_USER) {
-            throw new ValidationException([
-                'emoji' => $this->translator->trans('ramon-chat.api.reaction_limit'),
-            ]);
+            if ($previousEmoji !== null && strtolower($previousEmoji) !== strtolower($emoji)) {
+                $previousCount = (clone $existing)->where('emoji', $previousEmoji)->count();
+
+                if ($previousCount === 1) {
+                    $distinctCount--;
+                }
+            }
+
+            if ($distinctCount >= self::MAX_DISTINCT_REACTIONS) {
+                throw new ValidationException([
+                    'emoji' => $this->translator->trans('ramon-chat.api.reaction_limit'),
+                ]);
+            }
         }
     }
 
     /**
-     * Só shortcode simples. Sem catálogo, porque emoji custom do Flamoji também
-     * reage por shortcode; o abuso é contido pelo tamanho e pelos limites de
-     * assertRoomForReaction().
+     * Shortcodes cobrem emoji customizados do Flamoji; emojis Unicode do picker
+     * são preservados quando não têm um shortcode correspondente.
      *
      * @throws ValidationException
      */
     protected function normaliseEmoji(string $emoji): string
     {
-        // Aceita `:heart:` e `heart`; grava sem os dois-pontos.
+        // Aceita `:heart:` e `heart`; grava shortcodes sem os dois-pontos.
         $emoji = trim($emoji, ": \t\n\r");
 
-        if ($emoji === '' || ! preg_match('/\A[a-z0-9_+\-]{1,60}\z/i', $emoji)) {
+        if (preg_match('/\A[a-z0-9_+\-]{1,60}\z/i', $emoji)) {
+            return $emoji;
+        }
+
+        $unicodeEmoji = preg_match(
+            '/\A(?=.*[\p{Extended_Pictographic}\x{1F1E6}-\x{1F1FF}\x{20E3}])[\p{Extended_Pictographic}\x{FE0E}\x{FE0F}\x{200D}\x{1F3FB}-\x{1F3FF}\x{1F1E6}-\x{1F1FF}\x{20E3}\x{E0020}-\x{E007F}\x{0023}\x{002A}\x{0030}-\x{0039}]+\z/u',
+            $emoji
+        );
+
+        if (! $unicodeEmoji || mb_strlen($emoji, 'UTF-8') > 60) {
             throw new ValidationException([
                 'emoji' => $this->translator->trans('ramon-chat.api.invalid_reaction'),
             ]);

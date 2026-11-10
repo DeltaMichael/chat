@@ -283,7 +283,7 @@ function pickerButton(): any {
 
       // `TextEditorButton.initAttrs` sobrescreve a lista de classes, então anexa depois.
       // `Button-flamoji` precisa ficar: é o que `getButtonElement()` procura.
-      attrs.className = `${attrs.className} ChatComposer-tool`;
+      attrs.className = `${attrs.className} ${attrs.chatButtonClass ?? 'ChatComposer-tool'}`;
     }
 
     oninit(vnode: Mithril.Vnode): void {
@@ -320,7 +320,11 @@ function pickerButton(): any {
  *   conforme o `picker_set` do admin.
  * @param disabled Acompanha as outras ferramentas durante um envio.
  */
-export function flamojiPickerButton(onInsert: (text: string) => void, disabled = false): Mithril.Children {
+export function flamojiPickerButton(
+  onInsert: (text: string) => void,
+  disabled = false,
+  options: { className?: string; title?: string } = {}
+): Mithril.Children {
   const Button = pickerButton();
 
   if (!Button) return null;
@@ -330,6 +334,7 @@ export function flamojiPickerButton(onInsert: (text: string) => void, disabled =
     composer: null,
     onInsert,
     disabled,
-    title: app.translator.trans('ramon-chat.forum.composer.emoji', {}, true),
+    chatButtonClass: options.className,
+    title: options.title ?? app.translator.trans('ramon-chat.forum.composer.emoji', {}, true),
   });
 }

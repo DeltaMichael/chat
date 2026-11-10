@@ -12,8 +12,8 @@ import type Mithril from 'mithril';
 
 import type Message from '../../common/models/Message';
 import type ChatState from '../state/ChatState';
-import { displayEmoji } from '../utils/emoji';
-import { customEmoji, customEmojiImage } from '../utils/flamoji';
+import { displayEmoji, reactionValue } from '../utils/emoji';
+import { customEmoji, customEmojiImage, flamojiAvailable, flamojiPickerButton } from '../utils/flamoji';
 import { isOnline } from '../utils/presence';
 import { authorAvatar, authorLink } from '../utils/bot';
 import { safeFileUrl } from '../utils/url';
@@ -532,6 +532,21 @@ export default class ChatMessage extends Component<ChatMessageAttrs> {
           onclick={() => this.react(message, LIKE_REACTION)}
         />
       );
+
+      if (flamojiAvailable()) {
+        items.push(
+          flamojiPickerButton(
+            (value) => {
+              this.reactWithEmoji(message, value).catch((error) => console.error('[ramon-chat] could not resolve reaction emoji', error));
+            },
+            false,
+            {
+              className: 'ChatMessage-action',
+              title: app.translator.trans('ramon-chat.forum.message.react', {}, true),
+            }
+          )
+        );
+      }
     }
 
     if (message.canCreateThread()) {
@@ -649,15 +664,24 @@ export default class ChatMessage extends Component<ChatMessageAttrs> {
 
   protected async react(message: Message, emoji: string): Promise<void> {
     // Otimista: reação é a interação mais frequente.
-    const summary = { ...(message.reactionSummary() ?? {}) };
-    const entry = summary[emoji] ?? { count: 0, reacted: false };
+    const previousSummary = Object.fromEntries(Object.entries(message.reactionSummary() ?? {}).map(([key, entry]) => [key, { ...entry }]));
+    const summary = Object.fromEntries(Object.entries(previousSummary).map(([key, entry]) => [key, { ...entry }]));
+    const previousEmoji = Object.keys(summary).find((key) => summary[key].reacted);
 
-    summary[emoji] = {
-      count: entry.count + (entry.reacted ? -1 : 1),
-      reacted: !entry.reacted,
-    };
+    if (previousEmoji === emoji) {
+      summary[emoji] = { count: summary[emoji].count - 1, reacted: false };
 
-    if (summary[emoji].count <= 0) delete summary[emoji];
+      if (summary[emoji].count <= 0) delete summary[emoji];
+    } else {
+      if (previousEmoji) {
+        summary[previousEmoji] = { count: summary[previousEmoji].count - 1, reacted: false };
+
+        if (summary[previousEmoji].count <= 0) delete summary[previousEmoji];
+      }
+
+      const entry = summary[emoji] ?? { count: 0, reacted: false };
+      summary[emoji] = { count: entry.count + 1, reacted: true };
+    }
 
     message.pushAttributes({ reactionSummary: summary });
     m.redraw();
@@ -671,11 +695,21 @@ export default class ChatMessage extends Component<ChatMessageAttrs> {
 
       app.store.pushPayload(payload);
     } catch (e) {
-      // Volta à versão do servidor em vez de adivinhar o rollback.
-      message.pushAttributes({ reactionSummary: message.reactionSummary() });
+      message.pushAttributes({ reactionSummary: previousSummary });
     } finally {
       m.redraw();
     }
+  }
+
+  protected async reactWithEmoji(message: Message, value: string): Promise<void> {
+    const emoji = reactionValue(value);
+
+    if (!emoji) {
+      app.alerts.show({ type: 'error' }, app.translator.trans('ramon-chat.api.invalid_reaction'));
+      return;
+    }
+
+    await this.react(message, emoji);
   }
 
   protected async bookmark(message: Message): Promise<void> {

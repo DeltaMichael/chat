@@ -1306,11 +1306,13 @@ body.ChatFullPage {
   margin-top: 6px;
 
   &-image {
-    max-width: 320px;
-    max-height: 240px;
+    width: auto;
+    height: auto;
+    max-width: ~"min(320px, 100%)";
+    max-height: ~"min(70vh, 560px)";
     border-radius: @chat-radius-sm;
     border: 1px solid var(--avocado-border-subtle);
-    // Definido pela largura/altura salvas, para a linha não fazer reflow.
+    // The stored dimensions reserve space without flattening portrait screenshots.
     background: var(--avocado-surface-1);
   }
 

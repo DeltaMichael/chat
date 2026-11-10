@@ -21,8 +21,8 @@ use Ramon\Chat\Tests\integration\ResetsVisibilityScopers;
  * Os limites de tudo o que um membro faz com uma mensagem além de enviá-la.
  *
  * Cada caminho segue as regras do envio: edição respeita o teto de tamanho e
- * fecha para quem saiu do canal; reações aceitam só shortcodes válidos, com
- * limite e throttle; nome de favorito e rascunho têm tamanho máximo (sem 500); e
+ * fecha para quem saiu do canal; reações aceitam shortcodes ou emoji Unicode,
+ * limitam uma por pessoa/mensagem e aplicam throttle; nome de favorito e rascunho têm tamanho máximo (sem 500); e
  * a busca do webhook não trata `%` e `_` da URL como curingas.
  */
 class SideActionLimitsTest extends TestCase
@@ -108,28 +108,30 @@ class SideActionLimitsTest extends TestCase
         $this->assertStringContainsString('bye', (string) Message::query()->findOrFail(2)->getAttributes()['content']);
     }
 
-    public function test_a_reaction_must_look_like_a_shortcode(): void
+    public function test_a_reaction_must_be_a_shortcode_or_unicode_emoji(): void
     {
         $this->boot();
 
         $this->assertSame(422, $this->post('/api/chat-messages/1/react', ['emoji' => '<b>x</b>']));
         $this->assertSame(422, $this->post('/api/chat-messages/1/react', ['emoji' => str_repeat('a', 61)]));
         $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => ':heart:']));
+        $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => '🔥']));
+        $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => '👨‍👩‍👧‍👦']));
+        $this->assertSame('👨‍👩‍👧‍👦', MessageReaction::query()->where('message_id', 1)->where('emoji', '👨‍👩‍👧‍👦')->value('emoji'));
     }
 
-    public function test_one_person_cannot_pile_reactions_onto_a_message(): void
+    public function test_a_user_can_have_only_one_reaction_per_message_and_switch_or_remove_it(): void
     {
         $this->boot();
 
-        for ($i = 0; $i < 10; $i++) {
-            $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => 'e'.$i]));
-        }
+        $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => 'heart']));
+        $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => 'fire']));
+        $this->assertSame(1, MessageReaction::query()->where('message_id', 1)->where('user_id', self::AUTHOR)->count());
+        $this->assertSame('fire', MessageReaction::query()->where('message_id', 1)->where('user_id', self::AUTHOR)->value('emoji'));
 
-        $this->assertSame(422, $this->post('/api/chat-messages/1/react', ['emoji' => 'one_too_many']));
-        $this->assertSame(10, MessageReaction::query()->where('message_id', 1)->count());
+        $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => 'fire']));
 
-        // Desfazer uma reação nunca é recusado.
-        $this->assertSame(200, $this->post('/api/chat-messages/1/react', ['emoji' => 'e0']));
+        $this->assertSame(0, MessageReaction::query()->where('message_id', 1)->where('user_id', self::AUTHOR)->count());
     }
 
     public function test_reacting_is_throttled(): void
