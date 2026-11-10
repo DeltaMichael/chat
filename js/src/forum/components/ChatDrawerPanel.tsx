@@ -23,14 +23,26 @@ import iconLabel from '../utils/iconLabel';
 import { morphIn, rememberOrigin } from '../utils/morph';
 
 /**
- * Painel flutuante do chat, no canto inferior direito de qualquer página.
+ * Painel flutuante do chat, ancorado no canto inferior direito até ser movido.
  *
  * Montado uma vez na raiz do app, para navegar pelo fórum não fechar a conversa.
  * Em telas estreitas vira um botão flutuante que abre a página cheia (ver
  * `shouldUseChatDrawer`). Fica no chunk lazy; o ChatDrawer é a casca que o monta.
  */
 export default class ChatDrawerPanel extends Component<ComponentAttrs> {
-  /** Último `isNarrowViewport()`, para o resize só redesenhar quando muda. */
+  private drag: {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    drawer: HTMLElement;
+    moved: boolean;
+  } | null = null;
+
+  private suppressHeaderClick = false;
+
+  /** Último `isNarrowViewport()`, para detectar mudanças no resize. */
   private narrow = isNarrowViewport();
 
   /**
@@ -39,8 +51,20 @@ export default class ChatDrawerPanel extends Component<ComponentAttrs> {
    */
   private onResize = () => {
     const narrow = isNarrowViewport();
+    const drawer = document.querySelector<HTMLElement>('.ChatDrawer');
+    let positionChanged = false;
 
-    if (narrow === this.narrow) return;
+    if (drawer && chatState.drawerPosition) {
+      const rect = drawer.getBoundingClientRect();
+      const position = this.clampPosition(chatState.drawerPosition.x, chatState.drawerPosition.y, rect.width, rect.height);
+
+      if (position.x !== chatState.drawerPosition.x || position.y !== chatState.drawerPosition.y) {
+        chatState.setDrawerPosition(position, chatState.drawerPinned);
+        positionChanged = true;
+      }
+    }
+
+    if (narrow === this.narrow && !positionChanged) return;
 
     this.narrow = narrow;
     m.redraw();
@@ -53,6 +77,7 @@ export default class ChatDrawerPanel extends Component<ComponentAttrs> {
     super.oncreate(vnode);
 
     window.addEventListener('resize', this.onResize);
+    this.clampRestoredPosition(vnode.dom);
     this.morphWhenShown(vnode.dom);
   }
 
@@ -97,11 +122,21 @@ export default class ChatDrawerPanel extends Component<ComponentAttrs> {
       <div
         className={classList('ChatDrawer', {
           'ChatDrawer--collapsed': chatState.drawerCollapsed,
+          'ChatDrawer--dragging': this.drag !== null,
+          'ChatDrawer--pinned': chatState.drawerPinned,
         })}
+        style={this.drawerStyle()}
         role="complementary"
         aria-label={title}
       >
-        <div className="ChatDrawer-header" onclick={(e: Event) => this.onHeaderClick(e)}>
+        <div
+          className="ChatDrawer-header"
+          onpointerdown={(e: PointerEvent) => this.startDrag(e)}
+          onpointermove={(e: PointerEvent) => this.moveDrag(e)}
+          onpointerup={(e: PointerEvent) => this.endDrag(e)}
+          onpointercancel={(e: PointerEvent) => this.endDrag(e)}
+          onclick={(e: Event) => this.onHeaderClick(e)}
+        >
           {channel ? (
             <Button
               className="Button Button--icon Button--flat"
@@ -123,7 +158,13 @@ export default class ChatDrawerPanel extends Component<ComponentAttrs> {
             <button
               type="button"
               className="ChatDrawer-title ChatDrawer-title--channel"
-              onclick={() => {
+              onclick={(e: MouseEvent) => {
+                if (this.suppressHeaderClick) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+
                 openChannelInfo(channel);
               }}
             >
@@ -154,6 +195,16 @@ export default class ChatDrawerPanel extends Component<ComponentAttrs> {
                 cabem em 320px. Some quando recolhido. */}
             {channel && !chatState.drawerCollapsed ? this.channelMenu(channel) : null}
 
+            <Button
+              className={classList('Button Button--icon Button--flat ChatDrawer-pinButton', {
+                'ChatDrawer-pinButton--active': chatState.drawerPinned,
+              })}
+              icon="fas fa-thumbtack"
+              {...iconLabel(app.translator.trans(chatState.drawerPinned ? 'ramon-chat.forum.drawer.unpin' : 'ramon-chat.forum.drawer.pin', {}, true))}
+              onclick={() => {
+                this.togglePinned();
+              }}
+            />
             <Button
               className="Button Button--icon Button--flat"
               icon="fas fa-expand"
@@ -200,11 +251,135 @@ export default class ChatDrawerPanel extends Component<ComponentAttrs> {
    * padding do menu não é botão.
    */
   protected onHeaderClick(e: Event): void {
+    if (this.suppressHeaderClick) {
+      this.suppressHeaderClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
+
     const target = e.target as HTMLElement | null;
 
     if (target?.closest('button, a, input, .Dropdown')) return;
 
     this.toggleCollapsed();
+  }
+
+  protected startDrag(e: PointerEvent): void {
+    if (
+      chatState.drawerPinned ||
+      e.button !== 0 ||
+      !(e.target instanceof Element) ||
+      e.target.closest('button:not(.ChatDrawer-title--channel), a, input, .Dropdown')
+    )
+      return;
+
+    const header = e.currentTarget;
+    const drawer = header instanceof HTMLElement ? header.closest<HTMLElement>('.ChatDrawer') : null;
+
+    if (!drawer) return;
+
+    const rect = drawer.getBoundingClientRect();
+
+    this.drag = {
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      drawer,
+      moved: false,
+    };
+    if (header instanceof HTMLElement) header.setPointerCapture(e.pointerId);
+    if (!e.target.closest('.ChatDrawer-title--channel')) e.preventDefault();
+    m.redraw();
+  }
+
+  protected moveDrag(e: PointerEvent): void {
+    if (!this.drag || this.drag.pointerId !== e.pointerId) return;
+
+    const drag = this.drag;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+
+    if (!drag.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
+
+    drag.moved = true;
+    const position = this.clampPosition(drag.originX + dx, drag.originY + dy, drag.drawer.offsetWidth, drag.drawer.offsetHeight);
+    chatState.setDrawerPosition(position);
+    Object.assign(drag.drawer.style, this.drawerStyle());
+  }
+
+  protected endDrag(e: PointerEvent): void {
+    if (!this.drag || this.drag.pointerId !== e.pointerId) return;
+
+    const header = e.currentTarget;
+    const drag = this.drag;
+    this.drag = null;
+    this.suppressHeaderClick = drag.moved;
+    if (drag.moved) {
+      window.setTimeout(() => {
+        this.suppressHeaderClick = false;
+      }, 0);
+    }
+
+    if (header instanceof HTMLElement && header.hasPointerCapture(e.pointerId)) {
+      header.releasePointerCapture(e.pointerId);
+    }
+
+    if (chatState.drawerPinned && drag.moved) {
+      chatState.setDrawerPosition(chatState.drawerPosition, true);
+    }
+
+    m.redraw();
+  }
+
+  protected togglePinned(): void {
+    if (chatState.drawerPinned) {
+      chatState.setDrawerPinned(false);
+    } else {
+      const drawer = document.querySelector<HTMLElement>('.ChatDrawer');
+      const rect = drawer?.getBoundingClientRect();
+      const position = rect ? this.clampPosition(rect.left, rect.top, rect.width, rect.height) : chatState.drawerPosition;
+
+      chatState.setDrawerPinned(true, position);
+    }
+
+    m.redraw();
+  }
+
+  protected clampPosition(x: number, y: number, width: number, height: number): { x: number; y: number } {
+    const inset = 0;
+
+    return {
+      x: Math.max(inset, Math.min(x, window.innerWidth - width - inset)),
+      y: Math.max(inset, Math.min(y, window.innerHeight - height - inset)),
+    };
+  }
+
+  protected clampRestoredPosition(dom: Element | null): void {
+    if (!chatState.drawerPosition || !(dom instanceof HTMLElement)) return;
+
+    const rect = dom.getBoundingClientRect();
+    const position = this.clampPosition(chatState.drawerPosition.x, chatState.drawerPosition.y, rect.width, rect.height);
+
+    if (position.x !== chatState.drawerPosition.x || position.y !== chatState.drawerPosition.y) {
+      chatState.setDrawerPosition(position, chatState.drawerPinned);
+      m.redraw();
+    }
+  }
+
+  protected drawerStyle() {
+    const position = chatState.drawerPosition;
+
+    return position
+      ? {
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          right: 'auto',
+          bottom: 'auto',
+        }
+      : {};
   }
 
   /**

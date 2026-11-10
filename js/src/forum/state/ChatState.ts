@@ -53,6 +53,11 @@ const SNAPSHOT_CHANNELS = 3;
 /** Pausa antes de gravar o snapshot; ver scheduleSnapshot(). */
 const SNAPSHOT_DEBOUNCE_MS = 1500;
 
+interface DrawerPosition {
+  x: number;
+  y: number;
+}
+
 /** Quando esta aba abriu: uma saída da conta depois disso a impede de gravar. */
 const BOOTED_AT = Date.now();
 
@@ -161,6 +166,8 @@ export default class ChatState {
    */
   drawerOpen = false;
   drawerCollapsed = false;
+  drawerPinned = false;
+  drawerPosition: DrawerPosition | null = null;
 
   /**
    * A gaveta fechou para ir à tela cheia, não foi dispensada. Fechada no X fica
@@ -227,10 +234,17 @@ export default class ChatState {
         collapsed?: boolean;
         suspended?: boolean;
         channelId?: number | null;
+        pinned?: boolean;
+        position?: DrawerPosition | null;
       };
 
       this.drawerOpen = Boolean(saved.open);
       this.drawerCollapsed = Boolean(saved.collapsed);
+      this.drawerPinned = Boolean(saved.pinned);
+      this.drawerPosition =
+        this.drawerPinned && saved.position && Number.isFinite(saved.position.x) && Number.isFinite(saved.position.y)
+          ? { x: saved.position.x, y: saved.position.y }
+          : null;
       // Persistido para um reload na página cheia não perder a reabertura devida.
       this.drawerSuspended = Boolean(saved.suspended);
 
@@ -260,6 +274,8 @@ export default class ChatState {
           collapsed: this.drawerCollapsed,
           suspended: this.drawerSuspended,
           channelId: this.activeChannelId,
+          pinned: this.drawerPinned,
+          position: this.drawerPinned ? this.drawerPosition : null,
         })
       );
     } catch {
@@ -290,6 +306,10 @@ export default class ChatState {
   }
 
   setDrawerOpen(open: boolean): void {
+    if (open && !this.drawerOpen && !this.drawerPinned) {
+      this.drawerPosition = null;
+    }
+
     this.drawerOpen = open;
 
     // Abrir ou fechar diretamente resolve a questão, então uma suspensão pendente
@@ -335,6 +355,18 @@ export default class ChatState {
 
   setDrawerCollapsed(collapsed: boolean): void {
     this.drawerCollapsed = collapsed;
+    this.persistDrawer();
+  }
+
+  setDrawerPosition(position: DrawerPosition | null, persist = false): void {
+    this.drawerPosition = position;
+
+    if (persist) this.persistDrawer();
+  }
+
+  setDrawerPinned(pinned: boolean, position: DrawerPosition | null = this.drawerPosition): void {
+    this.drawerPinned = pinned;
+    this.drawerPosition = position;
     this.persistDrawer();
   }
 

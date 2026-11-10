@@ -158,6 +158,8 @@ ramon-chat:
       expand: Expand
       collapse: Collapse
       full_screen: Open full screen
+      pin: Pin chat position
+      unpin: Unpin chat position
       close: Close chat
       channel_actions: Channel actions
 

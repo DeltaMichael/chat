@@ -28,7 +28,7 @@
 }
 
 // ── Drawer ──
-// Painel flutuante no canto inferior direito, sobre qualquer página.
+// Painel flutuante, ancorado no canto inferior direito até ser movido.
 .ChatDrawer {
   position: fixed;
   right: 16px;
@@ -46,8 +46,7 @@
 
   background: var(--body-bg);
   border: 1px solid var(--avocado-border-subtle);
-  border-bottom: 0;
-  border-radius: @chat-radius-md @chat-radius-md 0 0;
+  border-radius: @chat-radius-md;
   box-shadow: var(--shadow-lifted);
 
   transition: height var(--avocado-t-medium);
@@ -69,7 +68,22 @@
     height: @chat-drawer-collapsed;
     padding: 0 8px 0 14px;
     border-bottom: 1px solid var(--avocado-border-soft);
-    cursor: pointer;
+    cursor: grab;
+    touch-action: none;
+  }
+
+  &--pinned &-header {
+    cursor: default;
+    touch-action: auto;
+  }
+
+  &--dragging &-header {
+    cursor: grabbing;
+    user-select: none;
+  }
+
+  &-pinButton--active {
+    color: var(--primary-color) !important;
   }
 
   &-title {
@@ -84,7 +98,7 @@
   // Com canal aberto o título é um botão que abre os detalhes, como no header da
   // tela cheia; perde o chrome de botão do navegador. Hover igual ao de
   // `.ChatChannel-title`, mesmo gesto no mesmo objeto. Fica nos 13px do drawer: a
-  // barra tem 48px e cinco controles ao lado.
+  // barra tem 48px e vários controles ao lado.
   &-title--channel {
     .chat-flex-row(8px);
     padding: 4px 8px;
@@ -141,6 +155,8 @@
     display: flex;
     flex: 1;
     min-height: 0; // lets the message list scroll instead of the drawer growing
+    overflow: hidden;
+    border-radius: 0 0 @chat-radius-md @chat-radius-md;
   }
 
   // Sem regras mobile: abaixo de `@chat-mobile-breakpoint` este painel não é

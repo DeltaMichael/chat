@@ -83,6 +83,16 @@ export default class ChatDrawer extends Component<ComponentAttrs> {
         className={classList('ChatDrawer ChatDrawer--loading', {
           'ChatDrawer--collapsed': chatState.drawerCollapsed,
         })}
+        style={
+          chatState.drawerPosition
+            ? {
+                left: `${chatState.drawerPosition.x}px`,
+                top: `${chatState.drawerPosition.y}px`,
+                right: 'auto',
+                bottom: 'auto',
+              }
+            : {}
+        }
         role="complementary"
         aria-busy="true"
       >

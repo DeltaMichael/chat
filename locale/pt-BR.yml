@@ -132,6 +132,8 @@ ramon-chat:
       expand: Expandir
       collapse: Recolher
       full_screen: Tela cheia
+      pin: Fixar posição do chat
+      unpin: Desafixar posição do chat
       close: Fechar chat
       channel_actions: Ações do canal
 
