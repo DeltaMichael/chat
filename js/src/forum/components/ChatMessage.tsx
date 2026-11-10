@@ -421,11 +421,15 @@ export default class ChatMessage extends Component<ChatMessageAttrs> {
             >
               {/* Like como ícone, não 👍: igual ao flarum/likes e herda a cor do chip. */}
               {emoji === LIKE_REACTION ? (
-                <i className="ChatReactions-icon fas fa-thumbs-up" aria-hidden="true" />
+                <i className="ChatReactions-icon fas fa-thumbs-up" title={this.reactionNames(entry)} aria-hidden="true" />
               ) : custom ? (
-                <span className="ChatReactions-emoji">{customEmojiImage(custom, 'ChatReactions-flamoji')}</span>
+                <span className="ChatReactions-emoji" title={this.reactionNames(entry)}>
+                  {customEmojiImage(custom, 'ChatReactions-flamoji')}
+                </span>
               ) : (
-                <span className="ChatReactions-emoji">{displayEmoji(emoji)}</span>
+                <span className="ChatReactions-emoji" title={this.reactionNames(entry)}>
+                  {displayEmoji(emoji)}
+                </span>
               )}
               <span>{entry.count}</span>
             </button>
@@ -433,6 +437,18 @@ export default class ChatMessage extends Component<ChatMessageAttrs> {
         })}
       </div>
     );
+  }
+
+  protected reactionNames(entry: { count: number; users?: Array<{ id: number; name: string }> }): string {
+    const users = entry.users ?? [];
+    const names = users.map((user) => user.name);
+    const more = Math.max(0, entry.count - names.length);
+
+    if (more > 0) {
+      names.push(String(app.translator.trans('ramon-chat.forum.message.reactions_more', { count: more }, true)));
+    }
+
+    return names.join(', ');
   }
 
   protected uploads(message: Message): Mithril.Children {
@@ -664,23 +680,40 @@ export default class ChatMessage extends Component<ChatMessageAttrs> {
 
   protected async react(message: Message, emoji: string): Promise<void> {
     // Otimista: reação é a interação mais frequente.
-    const previousSummary = Object.fromEntries(Object.entries(message.reactionSummary() ?? {}).map(([key, entry]) => [key, { ...entry }]));
-    const summary = Object.fromEntries(Object.entries(previousSummary).map(([key, entry]) => [key, { ...entry }]));
+    const previousSummary = Object.fromEntries(
+      Object.entries(message.reactionSummary() ?? {}).map(([key, entry]) => [key, { ...entry, users: [...(entry.users ?? [])] }])
+    );
+    const summary = Object.fromEntries(Object.entries(previousSummary).map(([key, entry]) => [key, { ...entry, users: [...entry.users] }]));
     const previousEmoji = Object.keys(summary).find((key) => summary[key].reacted);
+    const actor = app.session.user;
+    const actorId = Number(actor?.id());
+    const actorEntry = actor ? { id: actorId, name: actor.displayName() } : null;
 
     if (previousEmoji === emoji) {
-      summary[emoji] = { count: summary[emoji].count - 1, reacted: false };
+      summary[emoji] = {
+        count: summary[emoji].count - 1,
+        reacted: false,
+        users: summary[emoji].users.filter((user) => user.id !== actorId),
+      };
 
       if (summary[emoji].count <= 0) delete summary[emoji];
     } else {
       if (previousEmoji) {
-        summary[previousEmoji] = { count: summary[previousEmoji].count - 1, reacted: false };
+        summary[previousEmoji] = {
+          count: summary[previousEmoji].count - 1,
+          reacted: false,
+          users: summary[previousEmoji].users.filter((user) => user.id !== actorId),
+        };
 
         if (summary[previousEmoji].count <= 0) delete summary[previousEmoji];
       }
 
-      const entry = summary[emoji] ?? { count: 0, reacted: false };
-      summary[emoji] = { count: entry.count + 1, reacted: true };
+      const entry = summary[emoji] ?? { count: 0, reacted: false, users: [] };
+      summary[emoji] = {
+        count: entry.count + 1,
+        reacted: true,
+        users: actorEntry && !entry.users.some((user) => user.id === actorId) && entry.users.length < 5 ? [...entry.users, actorEntry] : entry.users,
+      };
     }
 
     message.pushAttributes({ reactionSummary: summary });

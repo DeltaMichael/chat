@@ -609,13 +609,15 @@ function onMessagePurged(data: { id: number; channelId: number; threadId: number
   m.redraw();
 }
 
-function onReaction(data: { messageId: number; emoji: string; userId: number; added: boolean }): void {
+function onReaction(data: { messageId: number; emoji: string; userId: number; userName?: string; added: boolean }): void {
   const message = app.store.getById('chat-messages', String(data.messageId)) as Message | undefined;
 
   if (!message) return;
 
-  const summary = Object.fromEntries(Object.entries(message.reactionSummary() ?? {}).map(([emoji, entry]) => [emoji, { ...entry }]));
-  const entry = summary[data.emoji] ?? { count: 0, reacted: false };
+  const summary = Object.fromEntries(
+    Object.entries(message.reactionSummary() ?? {}).map(([emoji, entry]) => [emoji, { ...entry, users: [...(entry.users ?? [])] }])
+  );
+  const entry = summary[data.emoji] ?? { count: 0, reacted: false, users: [] };
 
   const isActor = Number(app.session.user?.id()) === data.userId;
 
@@ -624,6 +626,7 @@ function onReaction(data: { messageId: number; emoji: string; userId: number; ad
       if (!ownEntry.reacted || emoji === data.emoji) continue;
 
       ownEntry.count = Math.max(0, ownEntry.count - 1);
+      ownEntry.users = ownEntry.users.filter((user) => user.id !== data.userId);
       if (ownEntry.count === 0) delete summary[emoji];
     }
   }
@@ -632,6 +635,11 @@ function onReaction(data: { messageId: number; emoji: string; userId: number; ad
     count: Math.max(0, entry.count + (data.added ? 1 : -1)),
     // A reação de outra pessoa nunca muda o nosso "reagi".
     reacted: isActor ? data.added : entry.reacted,
+    users: data.added
+      ? entry.users.some((user) => user.id === data.userId) || entry.users.length >= 5
+        ? entry.users
+        : [...entry.users, { id: data.userId, name: data.userName ?? String(data.userId) }]
+      : entry.users.filter((user) => user.id !== data.userId),
   };
 
   if (summary[data.emoji].count === 0) delete summary[data.emoji];

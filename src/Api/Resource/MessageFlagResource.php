@@ -100,7 +100,7 @@ class MessageFlagResource extends AbstractDatabaseResource
     protected const EAGER_LOAD = [
         'message.user.groups',
         'message.channel',
-        'message.reactions',
+        'message.reactions.user',
         'message.uploads',
         'message.mentions',
         'message.flags',

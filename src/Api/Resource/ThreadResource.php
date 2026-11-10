@@ -69,7 +69,7 @@ class ThreadResource extends AbstractDatabaseResource
         'lastMessage.user',
         'originalMessage.user.groups',
         'originalMessage.channel',
-        'originalMessage.reactions',
+        'originalMessage.reactions.user',
         'originalMessage.uploads',
         'originalMessage.mentions',
         'originalMessage.flags',

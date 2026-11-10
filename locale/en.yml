@@ -243,6 +243,7 @@ ramon-chat:
       flagged: You reported this message
       reports: "{count, plural, one {# report} other {# reports}}"
       reports_open: "{count, plural, one {Reported by # person. Open the queue.} other {Reported by # people. Open the queue.}}"
+      reactions_more: "and {count} more"
       purge: Delete permanently
       purge_confirm: "Remove this message and its tombstone for good? This cannot be undone."
       purge_failed: That message could not be removed.

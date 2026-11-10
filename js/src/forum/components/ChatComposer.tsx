@@ -59,6 +59,7 @@ export default class ChatComposer extends Component<ChatComposerAttrs> {
   /** Último `slowModeSeconds` visto. -1 para a primeira sincronização sempre rodar. */
   private lastSlowModeWindow = -1;
   private uploading = false;
+  private uploadQueue: Array<{ file: File; channelId: number; threadId: number | null }> = [];
 
   /** Alvo de resposta/edição para o qual o cursor foi movido por último. */
   private focusedContext: string | null = null;
@@ -210,6 +211,7 @@ export default class ChatComposer extends Component<ChatComposerAttrs> {
             // O contador fica negativo e `submit()` explica.
             oninput={(e: Event) => this.onInput(e)}
             onkeydown={(e: KeyboardEvent) => this.onKeyDown(e)}
+            onpaste={(e: ClipboardEvent) => this.onPaste(e)}
             disabled={this.sending}
             aria-label={this.placeholder(channel)}
           />
@@ -276,7 +278,7 @@ export default class ChatComposer extends Component<ChatComposerAttrs> {
               className="ChatComposer-send"
               // Diz qual tecla envia, que depende de configuração do fórum.
               title={this.sendHint()}
-              disabled={this.sending || (!value.trim() && this.pendingUploads().length === 0)}
+              disabled={this.sending || this.uploading || (!value.trim() && this.pendingUploads().length === 0)}
               onclick={() => this.submit()}
             >
               {this.sending ? <LoadingIndicator display="inline" size="small" /> : <i className="fas fa-paper-plane" />}
@@ -948,7 +950,7 @@ export default class ChatComposer extends Component<ChatComposerAttrs> {
   protected async submit(): Promise<void> {
     const { channel, state, threadId, onSent } = this.attrs;
 
-    if (this.sending) return;
+    if (this.sending || this.uploading) return;
 
     const channelId = Number(channel.id());
     const content = state.draft(channelId, threadId ?? null);
@@ -1040,24 +1042,63 @@ export default class ChatComposer extends Component<ChatComposerAttrs> {
     (this.element.querySelector('.ChatComposer-fileInput') as HTMLInputElement | null)?.click();
   }
 
-  protected async onFilesPicked(e: Event): Promise<void> {
+  protected onFilesPicked(e: Event): void {
     const input = e.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
 
     // Zera para escolher o mesmo arquivo de novo ainda disparar change.
     input.value = '';
 
+    this.queueUploads(files);
+  }
+
+  protected onPaste(e: ClipboardEvent): void {
+    if (!app.forum.attribute('ramon-chat.allowUploads') || !app.forum.attribute('canUploadChatFiles')) return;
+
+    const clipboard = e.clipboardData;
+
+    if (!clipboard) return;
+
+    const files = Array.from(clipboard.items)
+      .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file !== null);
+    const images = files.length > 0 ? files : Array.from(clipboard.files).filter((file) => file.type.startsWith('image/'));
+
+    if (images.length === 0) return;
+
+    e.preventDefault();
+
+    const text = clipboard.getData('text/plain');
+
+    if (text) this.insertAtCursor(text);
+
+    this.queueUploads(images);
+  }
+
+  protected queueUploads(files: File[]): void {
     if (files.length === 0) return;
 
-    // Fixado agora: se a pessoa trocar de canal durante o envio, o arquivo
-    // continua na conversa para a qual foi escolhido.
     const channelId = Number(this.attrs.channel.id());
     const threadId = this.attrs.threadId ?? null;
 
+    this.uploadQueue.push(...files.map((file) => ({ file, channelId, threadId })));
+
+    if (this.uploading) return;
+
     this.uploading = true;
     m.redraw();
+    this.processUploadQueue().catch((error) => {
+      console.error('[ramon/chat] Failed to process the upload queue.', error);
+      this.uploading = false;
+      m.redraw();
+    });
+  }
 
-    for (const file of files) {
+  protected async processUploadQueue(): Promise<void> {
+    while (this.uploadQueue.length > 0) {
+      const { file, channelId, threadId } = this.uploadQueue.shift()!;
+
       try {
         const body = new FormData();
         body.append('file', file);

@@ -102,7 +102,7 @@ class MessageResource extends AbstractDatabaseResource
                 // 200 com coleção vazia a qualquer um.
                 ->authenticated()
                 ->defaultInclude(['user', 'user.groups', 'replyTo', 'replyTo.user', 'uploads', 'thread', 'thread.lastMessage', 'deletedBy'])
-                ->eagerLoad(['user.groups', 'reactions', 'uploads', 'mentions', 'flags', 'channel'])
+                ->eagerLoad(['user.groups', 'reactions.user', 'uploads', 'mentions', 'flags', 'channel'])
                 ->eagerLoadWhere('bookmarks', fn ($query, Context $context) => $query->where('user_id', $context->getActor()->id)),
 
             Endpoint\Index::make()
@@ -117,7 +117,7 @@ class MessageResource extends AbstractDatabaseResource
                 // `channel` porque as policies das flags o leem, e `bookmarks` por
                 // causa de `isBookmarked`; sem isso, uma query por linha. Bookmarks
                 // só do ator: o campo só pergunta por ele.
-                ->eagerLoad(['user.groups', 'reactions', 'uploads', 'mentions', 'flags', 'channel'])
+                ->eagerLoad(['user.groups', 'reactions.user', 'uploads', 'mentions', 'flags', 'channel'])
                 // Scope à mão: relação já carregada pula o buffer do core, que é
                 // quem aplica o scope do ThreadResource; thread apagada vazaria.
                 ->eagerLoadWhere('thread', fn ($query, Context $context) => $query->whereVisibleTo($context->getActor()))
@@ -738,23 +738,32 @@ class MessageResource extends AbstractDatabaseResource
     }
 
     /**
-     * @return array<string, array{count: int, reacted: bool}>
+     * @return array<string, array{count: int, reacted: bool, users: list<array{id: int, name: string}>}>
      */
     protected function reactionSummary(Message $message, User $actor): array
     {
         $summary = [];
+        $reactions = $message->reactions;
+        $reactions->loadMissing('user');
 
-        foreach ($message->reactions as $reaction) {
+        foreach ($reactions as $reaction) {
             $emoji = $reaction->emoji;
 
             if (! isset($summary[$emoji])) {
-                $summary[$emoji] = ['count' => 0, 'reacted' => false];
+                $summary[$emoji] = ['count' => 0, 'reacted' => false, 'users' => []];
             }
 
             $summary[$emoji]['count']++;
 
             if ($actor->exists && $reaction->user_id === $actor->id) {
                 $summary[$emoji]['reacted'] = true;
+            }
+
+            if (count($summary[$emoji]['users']) < 5 && $reaction->user !== null) {
+                $summary[$emoji]['users'][] = [
+                    'id' => (int) $reaction->user->id,
+                    'name' => (string) ($reaction->user->display_name ?: $reaction->user->username),
+                ];
             }
         }
 

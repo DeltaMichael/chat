@@ -178,6 +178,7 @@ class BroadcastListener
                 'channelId' => (int) $event->message->channel_id,
                 'emoji'     => $event->emoji,
                 'userId'    => (int) $event->actor->id,
+                'userName'  => (string) ($event->actor->display_name ?: $event->actor->username),
                 'added'     => $event->added,
             ],
             (int) $event->actor->id

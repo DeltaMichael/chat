@@ -13,6 +13,7 @@ import type Upload from './Upload';
 export interface ReactionSummaryEntry {
   count: number;
   reacted: boolean;
+  users: Array<{ id: number; name: string }>;
 }
 
 export type ReactionSummary = Record<string, ReactionSummaryEntry>;
