@@ -2,6 +2,7 @@ import app from 'flarum/forum/app';
 
 import chatState from './state/chat';
 import { playNotificationSound } from './utils/sound';
+import { isChannelDisplayed } from './utils/visibleChannel';
 import type Message from '../common/models/Message';
 import type Channel from '../common/models/Channel';
 import { NotificationLevel } from '../common/models/Channel';
@@ -420,8 +421,7 @@ function announce(data: MessagePayload, message: Message): void {
 
   if (channel?.isMuted()) return;
 
-  const watching =
-    chatState.activeChannelId === data.channelId && !chatState.drawerCollapsed && document.visibilityState === 'visible' && document.hasFocus();
+  const watching = isChannelDisplayed(data.channelId) && document.visibilityState === 'visible' && document.hasFocus();
 
   if (watching) return;
 
@@ -1300,7 +1300,7 @@ function bumpChannel(data: MessagePayload, own = false): void {
     lastMessageAt: data.createdAt,
   };
 
-  const isActive = chatState.activeChannelId === data.channelId && !chatState.drawerCollapsed;
+  const isActive = isChannelDisplayed(data.channelId);
 
   if (isActive) {
     // Está lendo agora: avisa o servidor, sem badge.

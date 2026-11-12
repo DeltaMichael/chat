@@ -98,7 +98,7 @@ export default class ChannelView extends Component<ChannelViewAttrs> {
     const stream = state.stream(Number(channel.id()));
 
     return (
-      <div className="ChatChannel">
+      <div className="ChatChannel" data-channel-id={channel.id()}>
         {this.header()}
         {this.pinnedBar()}
 
