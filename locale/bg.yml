@@ -2,6 +2,8 @@ ramon-chat:
   forum:
     nav:
       chat: Чат
+      unread_messages: "{count, plural, one {# непрочетено съобщение} other {# непрочетени съобщения}}"
+      unread_mentions: "{count, plural, one {# непрочетено споменаване} other {# непрочетени споменавания}}"
 
     settings:
       email_notifications: Получавай имейли при споменаване в чата

@@ -224,10 +224,23 @@ app.initializers.add('ramon-chat', () => {
   extend(IndexSidebar.prototype, 'navItems', function (items) {
     if (!canUseChat()) return;
 
+    const unread = chatState.unreadSummary();
+    const count = unread.mentions > 0 ? unread.mentions : unread.messages;
+    const label = chatTitle();
+    const unreadLabel =
+      count > 0
+        ? app.translator.trans(unread.mentions > 0 ? 'ramon-chat.forum.nav.unread_mentions' : 'ramon-chat.forum.nav.unread_messages', { count }, true)
+        : '';
+
     items.add(
       'chat',
-      <LinkButton href={app.route('chat.index')} icon={chatIcon() ?? undefined}>
-        {chatTitle()}
+      <LinkButton href={app.route('chat.index')} icon={chatIcon() ?? undefined} aria-label={unreadLabel ? `${label}: ${unreadLabel}` : label}>
+        {label}
+        {count > 0 ? (
+          <span className="ChatSidebarNav-badge" aria-hidden="true">
+            {count > 99 ? '99+' : count}
+          </span>
+        ) : null}
       </LinkButton>,
       90
     );
